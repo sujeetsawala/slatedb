@@ -146,6 +146,9 @@ use crate::sst::SsTableFormat;
 use crate::stats::StatRegistry;
 use crate::tablestore::TableStore;
 use crate::utils::WatchableOnceCell;
+use crate::record::store::RecordStore;
+use crate::compactor_state::CompactionState;
+use crate::flatbuffer_types::FlatBufferCompactionStateCodec;
 
 /// A builder for creating a new Db instance.
 ///
@@ -514,8 +517,16 @@ impl<P: Into<Path>> DbBuilder<P> {
             let scheduler_supplier = self
                 .compaction_scheduler_supplier
                 .unwrap_or_else(default_compaction_scheduler_supplier);
+            let compactor_state_store = Arc::new(RecordStore::<CompactionState>::new(
+                &path,
+                retrying_main_object_store.clone(),
+                "compactor",
+                "compactor",
+                Box::new(FlatBufferCompactionStateCodec {}),
+            ));    
             let compactor = Compactor::new(
                 manifest_store.clone(),
+                compactor_state_store,
                 uncached_table_store.clone(),
                 compactor_options.clone(),
                 scheduler_supplier,
@@ -802,6 +813,15 @@ impl<P: Into<Path>> CompactorBuilder<P> {
             retrying_main_object_store.clone(),
             self.system_clock.clone(),
         ));
+
+        let compactor_state_store  =  Arc::new(RecordStore::<CompactionState>::new(
+            &path,
+            retrying_main_object_store.clone(),
+            "compactor",
+            "compactor",
+            Box::new(FlatBufferCompactionStateCodec {}),
+        ));  
+
         let table_store = Arc::new(TableStore::new(
             ObjectStores::new(retrying_main_object_store.clone(), None),
             SsTableFormat::default(), // read only SSTs can use default
@@ -815,6 +835,7 @@ impl<P: Into<Path>> CompactorBuilder<P> {
 
         Compactor::new(
             manifest_store,
+            compactor_state_store,
             table_store,
             self.options,
             scheduler_supplier,

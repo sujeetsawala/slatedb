@@ -11,6 +11,8 @@ use crate::checkpoint;
 use crate::db_state::{self, SsTableInfo, SsTableInfoCodec};
 use crate::db_state::{CoreDbState, SsTableHandle};
 
+use crate::compactor_state::CompactionState;
+
 #[path = "./generated/manifest_generated.rs"]
 #[allow(warnings, clippy::disallowed_macros, clippy::disallowed_types, clippy::disallowed_methods)]
 #[rustfmt::skip]
@@ -268,6 +270,19 @@ impl FlatBufferManifestCodec {
         let builder = FlatBufferBuilder::new();
         let mut db_fb_builder = DbFlatBufferBuilder::new(builder);
         db_fb_builder.create_manifest(manifest)
+    }
+}
+
+pub(crate) struct FlatBufferCompactionStateCodec {}
+
+impl RecordCodec<CompactionState> for FlatBufferCompactionStateCodec {
+    // TODO: implement encoder
+    fn encode(&self, _compaction_state: &CompactionState) -> Bytes {
+        todo!()
+    }
+
+    fn decode(&self, _bytes: &Bytes) -> Result<CompactionState, SlateDBError> {
+        todo!()
     }
 }
 

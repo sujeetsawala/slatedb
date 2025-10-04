@@ -28,6 +28,8 @@ pub use crate::size_tiered_compaction::SizeTieredCompactionSchedulerSupplier;
 use crate::stats::StatRegistry;
 use crate::tablestore::TableStore;
 use crate::utils::{IdGenerator, WatchableOnceCell};
+use crate::record::store::{RecordStore, StoredRecord, FenceableRecord};
+use crate::compactor_state::CompactionState;
 
 pub trait CompactionSchedulerSupplier: Send + Sync {
     fn compaction_scheduler(
@@ -160,6 +162,7 @@ pub(crate) enum CompactorMessage {
 #[derive(Clone)]
 pub(crate) struct Compactor {
     manifest_store: Arc<ManifestStore>,
+    compaction_state_store: Arc<RecordStore<CompactionState>>,
     table_store: Arc<TableStore>,
     options: Arc<CompactorOptions>,
     scheduler_supplier: Arc<dyn CompactionSchedulerSupplier>,
@@ -175,6 +178,7 @@ impl Compactor {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         manifest_store: Arc<ManifestStore>,
+        compaction_state_store: Arc<RecordStore<CompactionState>>,
         table_store: Arc<TableStore>,
         options: CompactorOptions,
         scheduler_supplier: Arc<dyn CompactionSchedulerSupplier>,
@@ -188,6 +192,7 @@ impl Compactor {
         let stats = Arc::new(CompactionStats::new(stat_registry));
         Self {
             manifest_store,
+            compaction_state_store,
             table_store,
             options: Arc::new(options),
             scheduler_supplier,
@@ -223,6 +228,7 @@ impl Compactor {
         ));
         let handler = CompactorEventHandler::new(
             self.manifest_store.clone(),
+            self.compaction_state_store.clone(),
             self.options.clone(),
             scheduler,
             executor,
@@ -311,6 +317,7 @@ impl MessageHandler<CompactorMessage> for CompactorEventHandler {
 impl CompactorEventHandler {
     async fn new(
         manifest_store: Arc<ManifestStore>,
+        compaction_state_store: Arc<RecordStore<CompactionState>>,
         options: Arc<CompactorOptions>,
         scheduler: Arc<dyn CompactionScheduler + Send + Sync>,
         executor: Arc<dyn CompactionExecutor + Send + Sync>,
@@ -325,7 +332,16 @@ impl CompactorEventHandler {
             system_clock.clone(),
         )
         .await?;
-        let state = CompactorState::new(manifest.prepare_dirty()?);
+        let stored_compaction_state = StoredRecord::<CompactionState>::load(compaction_state_store.clone()).await?;
+        let compaction_state = FenceableRecord::<CompactionState>::init(
+            stored_compaction_state,
+            options.manifest_update_timeout,
+            system_clock.clone(),
+            |m: &CompactionState| m.compactor_epoch,
+            |m: &mut CompactionState, e: u64| m.compactor_epoch = e
+        )
+        .await?;
+        let state = CompactorState::new(manifest.prepare_dirty()?, compaction_state.prepare_dirty()?);
         Ok(Self {
             state,
             manifest,
