@@ -9,6 +9,7 @@ use crate::compactor_state::CompactionStatus::Submitted;
 use crate::db_state::{CoreDbState, SortedRun, SsTableHandle};
 use crate::error::SlateDBError;
 use crate::manifest::store::DirtyManifest;
+use crate::record::store::DirtyRecord;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum SourceId {
@@ -87,8 +88,16 @@ impl Compaction {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct CompactionState {
+    pub(crate) compactor_epoch: u64,
+    // active_compactions queued, in-progress and completed
+    compactions: HashMap<Ulid, Compaction>,
+}
+
 pub struct CompactorState {
     manifest: DirtyManifest,
+    compaction_state: DirtyRecord<CompactionState>,
     compactions: HashMap<Uuid, Compaction>,
 }
 
@@ -109,9 +118,10 @@ impl CompactorState {
         self.compactions.values().cloned().collect()
     }
 
-    pub(crate) fn new(manifest: DirtyManifest) -> Self {
+    pub(crate) fn new(manifest: DirtyManifest, compaction_state: DirtyRecord<CompactionState>) -> Self {
         Self {
             manifest,
+            compaction_state,
             compactions: HashMap::<Uuid, Compaction>::new(),
         }
     }
