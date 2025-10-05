@@ -95,6 +95,15 @@ pub(crate) struct CompactionState {
     compactions: HashMap<Ulid, Compaction>,
 }
 
+impl CompactionState {
+    pub(crate) fn initial() -> Self {
+        Self {
+            compactor_epoch: 0,
+            compactions: HashMap::new(),
+        }
+    }
+}
+
 pub struct CompactorState {
     manifest: DirtyManifest,
     compaction_state: DirtyRecord<CompactionState>,

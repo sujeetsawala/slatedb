@@ -327,8 +327,31 @@ impl CompactorEventHandler {
     ) -> Result<Self, SlateDBError> {
         // State Management Protocol Intialization
         let stored_manifest = StoredManifest::load(manifest_store.clone()).await?;
-        let stored_compaction_state = StoredRecord::<CompactionState>::load(compaction_state_store.clone()).await?;
-
+        let stored_compaction_state = match StoredRecord::<CompactionState>::load(
+            compaction_state_store.clone(),
+        )
+        .await
+        {
+            Ok(state) => state,
+            Err(SlateDBError::LatestRecordMissing) => {
+                // No compaction state yet: attempt to initialize. If a concurrent
+                // compactor wins the race, treat ourselves as fenced.
+                match StoredRecord::<CompactionState>::init(
+                    compaction_state_store.clone(),
+                    CompactionState::initial(),
+                )
+                .await
+                {
+                    Ok(state) => state,
+                    Err(SlateDBError::FileVersionExists) => {
+                        warn!("compactor fenced by existing state");
+                        return Err(SlateDBError::Fenced);
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            Err(e) => return Err(e),
+        };
         let manifest = FenceableManifest::init_compactor(
             stored_manifest,
             options.manifest_update_timeout,
