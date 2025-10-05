@@ -325,14 +325,16 @@ impl CompactorEventHandler {
         stats: Arc<CompactionStats>,
         system_clock: Arc<dyn SystemClock>,
     ) -> Result<Self, SlateDBError> {
+        // State Management Protocol Intialization
         let stored_manifest = StoredManifest::load(manifest_store.clone()).await?;
+        let stored_compaction_state = StoredRecord::<CompactionState>::load(compaction_state_store.clone()).await?;
+
         let manifest = FenceableManifest::init_compactor(
             stored_manifest,
             options.manifest_update_timeout,
             system_clock.clone(),
         )
         .await?;
-        let stored_compaction_state = StoredRecord::<CompactionState>::load(compaction_state_store.clone()).await?;
         let compaction_state = FenceableRecord::<CompactionState>::init(
             stored_compaction_state,
             options.manifest_update_timeout,
